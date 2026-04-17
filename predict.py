@@ -1,19 +1,26 @@
 import sys
 import torch
 import torch.nn.functional as F
-from torchvision import models, transforms
+from torchvision import transforms
+from torchvision.models import mobilenet_v2
 from PIL import Image
+import json
 
 # --- Config ---
 MODEL_PATH = "waste_model.pth"
-CLASSES = ["Bio", "glass", "paper", "plastic", "rest"]
+
+# ✅ Load classes from training
+with open("classes.json", "r") as f:
+    CLASSES = json.load(f)
 
 # --- Load model ---
 def load_model():
-    model = models.mobilenet_v2(pretrained=False)
+    model = mobilenet_v2(weights=None)
+
     model.classifier[1] = torch.nn.Linear(
         model.last_channel, len(CLASSES)
     )
+
     model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
     model.eval()
     return model
@@ -28,6 +35,7 @@ def preprocess_image(image_path):
             std=[0.229, 0.224, 0.225]
         )
     ])
+
     image = Image.open(image_path).convert("RGB")
     return transform(image).unsqueeze(0)
 
@@ -40,8 +48,11 @@ def predict(image_path):
         logits = model(image)
         probs = F.softmax(logits, dim=1)[0]
 
-    # Return dictionary with class probabilities
-    return {CLASSES[i]: float(probs[i]) for i in range(len(CLASSES))}
+    # ✅ Return probabilities mapped correctly
+    return {
+        CLASSES[i]: float(probs[i])
+        for i in range(len(CLASSES))
+    }
 
 # --- Main execution ---
 if __name__ == "__main__":
@@ -52,6 +63,6 @@ if __name__ == "__main__":
     image_path = sys.argv[1]
     result = predict(image_path)
 
-    # Print probabilities sorted by highest first
+    # Print sorted results
     for cls, prob in sorted(result.items(), key=lambda x: -x[1]):
         print(f"{cls}: {prob:.2f}")

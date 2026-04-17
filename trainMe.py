@@ -2,13 +2,13 @@ import torch
 from torchvision import datasets, models, transforms
 from torch import nn, optim
 from torch.utils.data import DataLoader
+import json
 
 # ---- Config ----
 DATASET_DIR = "dataset"
 BATCH_SIZE = 16
-EPOCHS = 5
+EPOCHS = 20   # increased a bit for 12 classes
 LR = 0.0003
-NUM_CLASSES = 5
 
 # ---- Transforms ----
 train_transform = transforms.Compose([
@@ -26,8 +26,21 @@ train_transform = transforms.Compose([
 dataset = datasets.ImageFolder(DATASET_DIR, transform=train_transform)
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
+# ✅ Automatically get number of classes
+NUM_CLASSES = len(dataset.classes)
+
+# ✅ Print classes (important for debugging)
+print("Classes:", dataset.classes)
+
+# ✅ Save classes to file (VERY IMPORTANT)
+with open("classes.json", "w") as f:
+    json.dump(dataset.classes, f)
+
 # ---- Model ----
-model = models.mobilenet_v2(pretrained=True)
+from torchvision.models import mobilenet_v2, MobileNet_V2_Weights
+
+model = mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
+
 # Freeze base layers
 for param in model.features.parameters():
     param.requires_grad = False

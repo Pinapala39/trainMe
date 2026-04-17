@@ -13,4 +13,10 @@ async def classify(file: UploadFile = File(...)):
 
     result = predict(temp_path)
     predicted_class = max(result, key = result.get)
-    return result
+    confidence = result[predicted_class]
+
+return {
+    "predictions": result,
+    "category": predicted_class,
+    "confidence": confidence
+}
