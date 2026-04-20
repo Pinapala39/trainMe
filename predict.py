@@ -9,7 +9,6 @@ import json
 # --- Config ---
 MODEL_PATH = "waste_model.pth"
 
-# ✅ Load classes from training
 with open("classes.json", "r") as f:
     CLASSES = json.load(f)
 
@@ -48,7 +47,6 @@ def predict(image_path):
         logits = model(image)
         probs = F.softmax(logits, dim=1)[0]
 
-    # ✅ Return probabilities mapped correctly
     return {
         CLASSES[i]: float(probs[i])
         for i in range(len(CLASSES))
