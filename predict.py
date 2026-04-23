@@ -6,25 +6,34 @@ from torchvision.models import mobilenet_v2
 from PIL import Image
 import json
 
-# --- Config ---
+# ---------------- CONFIG ----------------
 MODEL_PATH = "waste_model.pth"
+CONF_THRESHOLD = 0.60  # smart-bin confidence cutoff
 
+# ---------------- LOAD CLASSES ----------------
 with open("classes.json", "r") as f:
     CLASSES = json.load(f)
 
-# --- Load model ---
+# ---------------- DEVICE ----------------
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# ---------------- MODEL (LOAD ONCE) ----------------
 def load_model():
     model = mobilenet_v2(weights=None)
 
     model.classifier[1] = torch.nn.Linear(
-        model.last_channel, len(CLASSES)
+        model.last_channel,
+        len(CLASSES)
     )
 
-    model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
+    model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+    model.to(device)
     model.eval()
     return model
 
-# --- Preprocess image ---
+MODEL = load_model()
+
+# ---------------- IMAGE PREPROCESSING ----------------
 def preprocess_image(image_path):
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
@@ -38,21 +47,35 @@ def preprocess_image(image_path):
     image = Image.open(image_path).convert("RGB")
     return transform(image).unsqueeze(0)
 
-# --- Predict function ---
+# ---------------- PREDICT FUNCTION ----------------
 def predict(image_path):
-    model = load_model()
-    image = preprocess_image(image_path)
+    image = preprocess_image(image_path).to(device)
 
     with torch.no_grad():
-        logits = model(image)
+        logits = MODEL(image)
         probs = F.softmax(logits, dim=1)[0]
 
+    # top prediction
+    top_prob, top_idx = torch.max(probs, dim=0)
+
+    confidence = float(top_prob)
+    category = CLASSES[int(top_idx)]
+
+    # ---------------- SMART BIN LOGIC ----------------
+    if confidence < CONF_THRESHOLD:
+        return {
+            "category": "unknown",
+            "confidence": confidence,
+            "message": "Low confidence - requires human verification"
+        }
+
     return {
-        CLASSES[i]: float(probs[i])
-        for i in range(len(CLASSES))
+        "category": category,
+        "confidence": confidence,
+        "message": "Auto classified"
     }
 
-# --- Main execution ---
+# ---------------- MAIN ----------------
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: python predict.py <image_path>")
@@ -61,6 +84,7 @@ if __name__ == "__main__":
     image_path = sys.argv[1]
     result = predict(image_path)
 
-    # Print sorted results
-    for cls, prob in sorted(result.items(), key=lambda x: -x[1]):
-        print(f"{cls}: {prob:.2f}")
+    print("\n--- Prediction Result ---")
+    print(f"Category  : {result['category']}")
+    print(f"Confidence: {result['confidence']:.2f}")
+    print(f"Message   : {result['message']}")

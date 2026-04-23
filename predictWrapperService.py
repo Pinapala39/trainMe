@@ -1,45 +1,63 @@
 from fastapi import FastAPI, UploadFile, File
 import shutil
+import os
 from predict import predict
 
 app = FastAPI()
+
+# ---------------- BIN RULES ----------------
+RULES = {
+    "battery": "Sondermüll",
+    "biological": "Biomüll",
+    "brown-glass": "Altglas (Braun)",
+    "cardboard": "Papier/Pappe",
+    "clothes": "Altkleider",
+    "green-glass": "Altglas (Grün)",
+    "metal": "Metall",
+    "paper": "Papier",
+    "plastic": "Gelbe Tonne",
+    "shoes": "Altkleider",
+    "trash": "Restmüll",
+    "white-glass": "Altglas (Weiß)"
+}
+
+# ---------------- API ----------------
 @app.post("/predict")
 async def classify(file: UploadFile = File(...)):
+
     temp_path = f"temp_{file.filename}"
 
-    with open(temp_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    try:
+        # Save uploaded file
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
-    result = predict(temp_path)
+        # ML prediction (already handles uncertainty)
+        result = predict(temp_path)
 
-    predicted_class = max(result, key=result.get)
-    confidence = result[predicted_class] * 100
-    if confidence < 50:
+        category = result.get("category")
+        confidence = result.get("confidence", 0)
+
+        # If model is unsure
+        if category == "unknown":
+            return {
+                "category": None,
+                "confidence": round(confidence, 2),
+                "bin": None,
+                "message": result.get("message", "I'm not sure about this waste type")
+            }
+
+        # Map to bin
+        bin_type = RULES.get(category, "Unknown")
+
         return {
-            "category": None,
+            "category": category,
             "confidence": round(confidence, 2),
-            "bin": None,
-            "message": "I'm not sure. What type of waste is this?"
-        }   
-    rules = {
-        "battery": "Sondermüll",
-        "biological": "Biomüll",
-        "brown-glass": "Altglas (Braun)",
-        "cardboard": "Papier/Pappe",
-        "clothes": "Altkleider",
-        "green-glass": "Altglas (Grün)",
-        "metal": "Metall",
-        "paper": "Papier",
-        "plastic": "Gelbe Tonne",
-        "shoes": "Altkleider",
-        "trash": "Restmüll",
-        "white-glass": "Altglas (Weiß)"
-    }
+            "bin": bin_type,
+            "message": result.get("message", "Auto classified")
+        }
 
-    bin_type = rules.get(predicted_class, "Unknown")
-    return {
-        "category": predicted_class,
-        "confidence": round(confidence,2),
-        "bin": bin_type
-    }
-    
+    finally:
+        # ALWAYS clean up temp file
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
